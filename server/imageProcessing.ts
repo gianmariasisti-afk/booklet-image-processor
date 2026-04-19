@@ -42,20 +42,27 @@ Return a JSON array ONLY (no other text):
           name: "detected_regions",
           strict: true,
           schema: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                x: { type: "number" },
-                y: { type: "number" },
-                width: { type: "number" },
-                height: { type: "number" },
-                type: { type: "string" },
-                confidence: { type: "number" },
+            type: "object",
+            properties: {
+              regions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    x: { type: "number" },
+                    y: { type: "number" },
+                    width: { type: "number" },
+                    height: { type: "number" },
+                    type: { type: "string" },
+                    confidence: { type: "number" },
+                  },
+                  required: ["x", "y", "width", "height", "type", "confidence"],
+                  additionalProperties: false,
+                },
               },
-              required: ["x", "y", "width", "height", "type", "confidence"],
-              additionalProperties: false,
             },
+            required: ["regions"],
+            additionalProperties: false,
           },
         },
       },
@@ -66,13 +73,22 @@ Return a JSON array ONLY (no other text):
 
     const contentStr = typeof content === "string" ? content : JSON.stringify(content);
 
+    // Try parsing as object with regions key first (tool_use response)
+    try {
+      const parsed = JSON.parse(contentStr);
+      if (parsed && Array.isArray(parsed.regions)) return parsed.regions;
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // fall through to regex
+    }
+
     const jsonMatch = contentStr.match(/\[[\s\S]*\]/);
     if (!jsonMatch) return [];
 
     const regions = JSON.parse(jsonMatch[0]);
     return Array.isArray(regions) ? regions : [];
   } catch (error) {
-    console.error("[Image Processing] Error detecting regions:", error);
+    console.error("[Image Processing] Error detecting regions:", error instanceof Error ? error.message : error);
     return [];
   }
 }
