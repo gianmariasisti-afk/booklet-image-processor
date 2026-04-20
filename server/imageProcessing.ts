@@ -24,14 +24,19 @@ export async function detectImageRegions(imageBuffer: Buffer): Promise<DetectedR
           role: "system",
           content: `You are an expert at analyzing scanned booklet pages and identifying visual content regions.
 Detect all images, figures, photos, diagrams, and illustrations on the page.
-For each detected region, provide normalized coordinates (0-1 scale where 0,0 is top-left and 1,1 is bottom-right).
-Return a JSON array ONLY (no other text):
-[{"x":0.1,"y":0.2,"width":0.3,"height":0.4,"type":"figure","confidence":0.95}]`,
+
+IMPORTANT — each region MUST fully enclose the associated caption/didascalia/legend text
+(usually printed directly below or beside the image, often in italics). The caption is part of
+the figure and must be inside the returned bounding box so the crop contains both the image
+and its caption. Extend "y" and "height" downward as needed to include any caption lines.
+
+Provide normalized coordinates (0-1 scale where 0,0 is top-left and 1,1 is bottom-right).
+Return an object shaped as {"regions": [{"x":0.1,"y":0.2,"width":0.3,"height":0.4,"type":"figure","confidence":0.95}]}.`,
         },
         {
           role: "user",
           content: [
-            { type: "text", text: "Analyze this scanned page and detect all image regions. Return only the JSON array." },
+            { type: "text", text: "Detect every image region on this scanned page. Each region's bounding box must include the image's caption text (the small italic line below or beside the photo) so that a crop of the region shows both the picture and its caption." },
             { type: "image_url", image_url: { url: base64Url } },
           ],
         },
@@ -141,7 +146,11 @@ export async function generateImageDescription(
     messages: [
       {
         role: "system",
-        content: "You are an expert at analyzing and describing visual content from scanned documents. Write clear, professional descriptions suitable for archival and retrieval. Be specific about objects, people, charts, diagrams, visible text, colors, and composition.",
+        content: `You are an expert at analyzing and describing visual content from scanned documents. Write clear, professional descriptions suitable for archival and retrieval. Be specific about objects, people, charts, diagrams, visible text, colors, and composition.
+
+Language: ALWAYS write the description in the same language as the surrounding page text (for example, if the page is in Italian, write the description entirely in Italian; if French, in French; etc.). Detect the language from the provided page context and match it. If no page context is provided, use the language that is visible in the image itself. Never translate — respond in the source language.
+
+If the image has a printed caption/didascalia visible within it, quote that caption verbatim at the start of your response, then continue with the detailed description in the same language.`,
       },
       { role: "user", content: userContent },
     ],
