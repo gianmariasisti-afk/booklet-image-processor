@@ -8,6 +8,7 @@ export interface DetectedRegion {
   height: number;
   type: string;
   confidence: number;
+  caption?: string;
 }
 
 function bufferToBase64DataUrl(buffer: Buffer, mimeType = "image/jpeg"): string {
@@ -25,18 +26,25 @@ export async function detectImageRegions(imageBuffer: Buffer): Promise<DetectedR
           content: `You are an expert at analyzing scanned booklet pages and identifying visual content regions.
 Detect all images, figures, photos, diagrams, and illustrations on the page.
 
-IMPORTANT — each region MUST fully enclose the associated caption/didascalia/legend text
-(usually printed directly below or beside the image, often in italics). The caption is part of
-the figure and must be inside the returned bounding box so the crop contains both the image
-and its caption. Extend "y" and "height" downward as needed to include any caption lines.
+Bounding box rules:
+- The returned bounding box MUST cover ONLY the image itself (photo / figure / illustration).
+- Do NOT include the caption, didascalia, legend, or any surrounding body text inside the box.
+- Stop the box at the visual edge of the picture.
 
-Provide normalized coordinates (0-1 scale where 0,0 is top-left and 1,1 is bottom-right).
-Return an object shaped as {"regions": [{"x":0.1,"y":0.2,"width":0.3,"height":0.4,"type":"figure","confidence":0.95}]}.`,
+Caption extraction:
+- If the image has a printed caption/didascalia (usually a short italic line of text directly
+  below or beside the picture, separate from the main article body), transcribe that caption
+  verbatim into the "caption" field, preserving its original language and punctuation.
+- If no caption is printed near the image, return an empty string for "caption".
+- Do NOT invent a caption; only transcribe what is actually printed near the image.
+
+Coordinates are normalized (0-1 scale, 0,0 = top-left, 1,1 = bottom-right).
+Return an object shaped as {"regions": [{"x":0.1,"y":0.2,"width":0.3,"height":0.4,"type":"figure","confidence":0.95,"caption":"..."}]}.`,
         },
         {
           role: "user",
           content: [
-            { type: "text", text: "Detect every image region on this scanned page. Each region's bounding box must include the image's caption text (the small italic line below or beside the photo) so that a crop of the region shows both the picture and its caption." },
+            { type: "text", text: "Detect every image region on this scanned page. The bounding box must cover only the picture itself (NOT its caption). Also transcribe any printed caption/didascalia near each image verbatim into the 'caption' field, in its original language." },
             { type: "image_url", image_url: { url: base64Url } },
           ],
         },
@@ -60,8 +68,9 @@ Return an object shaped as {"regions": [{"x":0.1,"y":0.2,"width":0.3,"height":0.
                     height: { type: "number" },
                     type: { type: "string" },
                     confidence: { type: "number" },
+                    caption: { type: "string" },
                   },
-                  required: ["x", "y", "width", "height", "type", "confidence"],
+                  required: ["x", "y", "width", "height", "type", "confidence", "caption"],
                   additionalProperties: false,
                 },
               },
@@ -148,9 +157,7 @@ export async function generateImageDescription(
         role: "system",
         content: `You are an expert at analyzing and describing visual content from scanned documents. Write clear, professional descriptions suitable for archival and retrieval. Be specific about objects, people, charts, diagrams, visible text, colors, and composition.
 
-Language: ALWAYS write the description in the same language as the surrounding page text (for example, if the page is in Italian, write the description entirely in Italian; if French, in French; etc.). Detect the language from the provided page context and match it. If no page context is provided, use the language that is visible in the image itself. Never translate — respond in the source language.
-
-If the image has a printed caption/didascalia visible within it, quote that caption verbatim at the start of your response, then continue with the detailed description in the same language.`,
+Language: ALWAYS write the description in the same language as the surrounding page text (for example, if the page is in Italian, write the description entirely in Italian; if French, in French; etc.). Detect the language from the provided page context and match it. If no page context is provided, use the language visible in the image itself. Never translate — respond in the source language.`,
       },
       { role: "user", content: userContent },
     ],

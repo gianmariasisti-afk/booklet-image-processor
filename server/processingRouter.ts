@@ -7,7 +7,10 @@ import {
   getUserUploads,
   updateUploadStatus,
   createCroppedImage,
+  getCroppedImageById,
   getCroppedImagesByUploadId,
+  updateCroppedImageCaption,
+  updateCroppedImageRegion,
   createDescription,
   getDescriptionByCroppedImageId,
 } from "./db";
@@ -84,6 +87,65 @@ export const processingRouter = router({
   listUploads: protectedProcedure.query(async ({ ctx }) => {
     return getUserUploads(ctx.user.id);
   }),
+
+  updateCaption: protectedProcedure
+    .input(
+      z.object({
+        croppedImageId: z.number(),
+        caption: z.string().max(2000),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const image = await getCroppedImageById(input.croppedImageId);
+      if (!image) throw new Error("Cropped image not found");
+      const upload = await getUploadById(image.uploadId);
+      if (!upload || upload.userId !== ctx.user.id) throw new Error("Unauthorized");
+
+      await updateCroppedImageCaption(input.croppedImageId, input.caption);
+      return { success: true };
+    }),
+
+  updateCropRegion: protectedProcedure
+    .input(
+      z.object({
+        croppedImageId: z.number(),
+        region: z.object({
+          x: z.number().min(0).max(1),
+          y: z.number().min(0).max(1),
+          width: z.number().min(0.001).max(1),
+          height: z.number().min(0.001).max(1),
+        }),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const image = await getCroppedImageById(input.croppedImageId);
+      if (!image) throw new Error("Cropped image not found");
+      const upload = await getUploadById(image.uploadId);
+      if (!upload || upload.userId !== ctx.user.id) throw new Error("Unauthorized");
+
+      const originalBuffer = await storageReadBuffer(upload.originalImageKey);
+      const newCroppedBuffer = await cropImageRegion(originalBuffer, {
+        ...input.region,
+        type: image.imageType,
+        confidence: 1,
+      });
+
+      const croppedKey = `cropped/${upload.id}/${Date.now()}-recrop-${image.imageType}.jpg`;
+      const { url: croppedImageUrl, key: croppedImageKey } = await storagePut(
+        croppedKey,
+        newCroppedBuffer,
+        "image/jpeg"
+      );
+
+      await updateCroppedImageRegion(
+        input.croppedImageId,
+        input.region,
+        croppedImageUrl,
+        croppedImageKey
+      );
+
+      return { success: true, croppedImageUrl };
+    }),
 });
 
 async function processBookletAsync(
@@ -118,6 +180,7 @@ async function processBookletAsync(
           detectionConfidence: region.confidence.toString(),
           regionCoordinates: { x: region.x, y: region.y, width: region.width, height: region.height },
           imageType: region.type,
+          caption: region.caption?.trim() || null,
         });
 
         const croppedImageId = Number((croppedResult as any).insertId);

@@ -43,6 +43,7 @@ export const croppedImages = sqliteTable("cropped_images", {
   detectionConfidence: text("detectionConfidence").notNull(),
   regionCoordinates: text("regionCoordinates", { mode: "json" }).notNull(),
   imageType: text("imageType").notNull(),
+  caption: text("caption"),
   processingStatus: text("processingStatus", { enum: ["detected", "cropped", "described", "failed"] }).default("detected").notNull(),
   createdAt: integer("createdAt", { mode: "timestamp" }).default(sql`(unixepoch())`).notNull(),
   updatedAt: integer("updatedAt", { mode: "timestamp" }).default(sql`(unixepoch())`).notNull(),

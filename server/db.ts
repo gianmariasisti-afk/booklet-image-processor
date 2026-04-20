@@ -67,6 +67,7 @@ function ensureSchema(db: ReturnType<typeof drizzle>) {
       detectionConfidence TEXT NOT NULL,
       regionCoordinates TEXT NOT NULL,
       imageType TEXT NOT NULL,
+      caption TEXT,
       processingStatus TEXT NOT NULL DEFAULT 'detected',
       createdAt INTEGER NOT NULL DEFAULT (unixepoch()),
       updatedAt INTEGER NOT NULL DEFAULT (unixepoch())
@@ -83,6 +84,11 @@ function ensureSchema(db: ReturnType<typeof drizzle>) {
       updatedAt INTEGER NOT NULL DEFAULT (unixepoch())
     );
   `);
+
+  const croppedCols = sqlite.prepare("PRAGMA table_info(cropped_images)").all() as { name: string }[];
+  if (!croppedCols.some((c) => c.name === "caption")) {
+    sqlite.exec(`ALTER TABLE cropped_images ADD COLUMN caption TEXT`);
+  }
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -165,13 +171,47 @@ export async function createCroppedImage(data: {
   detectionConfidence: string;
   regionCoordinates: any;
   imageType: string;
+  caption?: string | null;
 }) {
   const db = getDb();
   const result = db.insert(croppedImages).values({
     ...data,
+    caption: data.caption ?? null,
     regionCoordinates: typeof data.regionCoordinates === "string" ? data.regionCoordinates : JSON.stringify(data.regionCoordinates),
   }).run();
   return { insertId: result.lastInsertRowid };
+}
+
+export async function getCroppedImageById(croppedImageId: number) {
+  const db = getDb();
+  const result = db.select().from(croppedImages).where(eq(croppedImages.id, croppedImageId)).limit(1).all();
+  return result[0] || null;
+}
+
+export async function updateCroppedImageCaption(croppedImageId: number, caption: string) {
+  const db = getDb();
+  return db.update(croppedImages)
+    .set({ caption, updatedAt: new Date() })
+    .where(eq(croppedImages.id, croppedImageId))
+    .run();
+}
+
+export async function updateCroppedImageRegion(
+  croppedImageId: number,
+  regionCoordinates: { x: number; y: number; width: number; height: number },
+  croppedImageUrl: string,
+  croppedImageKey: string
+) {
+  const db = getDb();
+  return db.update(croppedImages)
+    .set({
+      regionCoordinates: JSON.stringify(regionCoordinates),
+      croppedImageUrl,
+      croppedImageKey,
+      updatedAt: new Date(),
+    })
+    .where(eq(croppedImages.id, croppedImageId))
+    .run();
 }
 
 export async function getCroppedImagesByUploadId(uploadId: number) {
